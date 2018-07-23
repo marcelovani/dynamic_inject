@@ -3,3 +3,4 @@ description = Inject elements
 package = Content
 core = 7.x
 files[] = plugins/contexts/dynamic_inject_context_reaction.inc
+dependencies[] = context
