@@ -1,6 +1,6 @@
 Dynamically injects content into the page. Content can be a block or a
 placeholder that can be replaced with the final content.
-Any block that is available can be inserted, exemple:
+Any block that is available can be inserted, example:
 Views, Ads, etc.
 
 # How it works
@@ -9,7 +9,7 @@ selector where you want to insert your block.
 You can choose if the content should be injected before or after
 the element and the distance from top or bottom.
 
-# Requied modules
+# Required modules
 - Context
 
 # Submodules

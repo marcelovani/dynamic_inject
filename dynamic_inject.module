@@ -46,7 +46,7 @@ function _dynamic_inject_elements_form($existing_elements = array()) {
 }
 
 /**
- * Implments hook_form_FORM_ID_alter().
+ * Implements hook_form_FORM_ID_alter().
  *
  * The context form doesn't get passed to form state, so we are altering the form as a workaround.
  */
