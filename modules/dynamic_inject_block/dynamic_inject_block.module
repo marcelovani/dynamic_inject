@@ -1,0 +1,84 @@
+<?php
+/**
+ * Code for inject block submodule.
+ */
+
+/**
+ * hook_dynamic_inject_type_info().
+ *
+ * @return array
+ */
+function dynamic_inject_block_dynamic_inject_type_info() {
+  return array(
+    'block' => array(
+      'name' => t('Block'),
+      'config' => array(
+        'id' => array(
+          'type' => 'select',
+          'name' => t('Block Name'),
+          '#description' => t('Type of element you want to place on the page'),
+          'options' => dynamic_inject_block_get_block_options(),
+          'callback' => 'dynamic_inject_blocks_ajax',
+          '#required' => TRUE,
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Get list of blocks for select boxes.
+ *
+ * @return array
+ */
+function dynamic_inject_block_get_block_options() {
+  // Return static cache if already set.
+  $block_list = &drupal_static(__FUNCTION__);
+  if (!is_null($block_list)) {
+    return $block_list;
+  }
+
+  // Return cache entry if available.
+  $cid = 'dynamic_inject_block:block_list';
+  $block_list_cache = cache_get($cid, 'cache');
+  if (!empty($block_list_cache->data)) {
+    $block_list = $block_list_cache->data;
+    return $block_list;
+  }
+
+  $theme_key = variable_get('theme_default', NULL);
+  // Get current default theme block list from database
+  $block_list = array();
+  $query = db_select('block', 'b')
+    ->fields('b')
+    ->condition('b.theme', $theme_key)
+    ->isNotNull('b.delta')
+    ->orderBy('b.module', 'ASC')
+    ->orderBy('b.delta', 'ASC');
+
+  $result = $query->execute();
+  while ($record = $result->fetchAssoc()) {
+    $key = $record['module'] . ' - ' . $record['delta'];
+    $block_list[$key] = $key;
+  }
+
+  cache_set($cid, $block_list, 'cache', CACHE_TEMPORARY);
+
+  return $block_list;
+}
+
+/**
+ * Implements hook_dynamic_inject_render_TYPE().
+ *
+ * @param $item
+ *
+ * @return string
+ */
+function dynamic_inject_block_dynamic_inject_render_block($item) {
+  list($module, $delta) = explode(' - ', $item['id']);
+  $block = block_load($module, $delta);
+  $render_array = _block_get_renderable_array(_block_render_blocks(array($block)));
+  $output = render($render_array);
+
+  return $output;
+}

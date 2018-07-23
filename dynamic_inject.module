@@ -1,0 +1,312 @@
+<?php
+/**
+ * Code for Dynamic Inject module.
+ */
+
+/**
+ * Helper form builder for the elements form.
+ */
+function _dynamic_inject_elements_form($existing_elements = array()) {
+  $form = array(
+    '#tree' => TRUE,
+    '#title' => t('Injected Elements'),
+  );
+
+  // Add wrapper to elements.
+  $form['elements'] = array(
+    '#prefix' => '<div id="dynamic-inject-element-wrapper">',
+    '#suffix' => '</div>',
+  );
+
+  // Add existing elements to the form if available.
+  if (!empty($existing_elements)) {
+    foreach ($existing_elements as $key => $data) {
+      _dynamic_inject_element_form($form, $key, $data, TRUE);
+    }
+  }
+  else {
+    // Add a single item by default.
+    _dynamic_inject_element_form($form, 0);
+  }
+
+  $form['dynamic_inject_more_elements'] = array(
+    '#type' => 'submit',
+    // #value must be unique across all context reaction forms.
+    '#value' => t('Add inject element'),
+    '#submit' => array('dynamic_inject_contexts_ajax_rebuild_elements'),
+    '#limit_validation_errors' => array(),
+    '#ajax' => array(
+      'callback' => 'dynamic_inject_contexts_ajax_reload_elements',
+      'wrapper' => 'dynamic-inject-element-wrapper',
+      'effect' => 'fade',
+    ),
+  );
+
+  return $form;
+}
+
+/**
+ * Implments hook_form_FORM_ID_alter().
+ *
+ * The context form doesn't get passed to form state, so we are altering the form as a workaround.
+ */
+function dynamic_inject_form_ctools_export_ui_edit_item_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_state['plugin']['schema'] != 'context' || !isset($form_state['triggering_element'])) {
+    return;
+  }
+
+  // Current form elements.
+  $elements_form =& $form['reactions']['plugins']['dynamic_inject_context'];
+  $elements_form_items =& $elements_form['elements'];
+  $elements_form_state_items =& $form_state['input']['reactions']['plugins']['dynamic_inject_context']['elements'];
+
+  switch ($form_state['triggering_element']['#value']) {
+    case 'Add inject element':
+      _dynamic_inject_element_form($elements_form, count($elements_form_state_items), array(), TRUE);
+      break;
+    case 'Remove inject element':
+      // Extract element key from parent elements.
+      $parent_elements = $form_state['triggering_element']['#parents'];
+      $key = $parent_elements[count($parent_elements) - 2];
+
+      // Remove element from form and reset keys.
+      unset($elements_form_items[$key]);
+      _dynamic_inject_element_form_reset_element_keys($elements_form_items);
+
+      // Remove element from form state and reset keys.
+      unset($elements_form_state_items[$key]);
+      _dynamic_inject_element_form_reset_element_keys($elements_form_state_items);
+
+      // If there are no inject element forms, add an empty one ready to be configured.
+      if (empty($elements_form_state_items)) {
+        _dynamic_inject_element_form($elements_form, 0);
+      }
+      break;
+  }
+}
+
+/**
+ * Helper to reset element array keys, but preserve string keys.
+ *
+ * @param array $elements
+ */
+function _dynamic_inject_element_form_reset_element_keys(&$elements) {
+  $reset_elements = array();
+  foreach ($elements as $key => $element) {
+    // Get elements with integer key and remove from original array.
+    if (is_int($key)) {
+      $reset_elements[] = $element;
+      unset($elements[$key]);
+    }
+  }
+  // Add reset elements back into original element array.
+  $elements = array_merge($elements, $reset_elements);
+}
+
+/**
+ * Helper form builder for an individual block.
+ *
+ * @param $form
+ * @param $key
+ * @param array $data
+ * @param bool $removable
+ */
+function _dynamic_inject_element_form(&$form, $key, $data = array(), $removable = FALSE) {
+  $form['elements'][$key] = array(
+    '#type' => 'fieldset',
+    '#prefix' => '<div class="element">',
+    '#suffix' => '</div>',
+  );
+
+  $types = module_invoke_all('dynamic_inject_type_info');
+  if(!empty($types)){
+    // Remove None placeholder.
+    $options = array('' => 'Select');
+    // We build the options array with all the possible elements available configurations.
+    foreach ($types as $type => $config) {
+      $options[$type] = $config['name'];
+    }
+  }
+  else {
+    $options = array('' => t('Please enable any submodule'));
+  }
+
+  $form['elements'][$key]['type'] = array(
+    '#type' => 'select',
+    '#title' => t('Element Type'),
+    '#options' => $options,
+    '#attributes' => array('class' => array('field-element-element')),
+    '#default_value' => isset($data['type']) ? $data['type'] : '',
+    '#ajax' => array(
+      'callback' => 'dynamic_inject_contexts_ajax_reload_elements',
+      'wrapper' => 'dynamic-inject-element-wrapper',
+    ),
+    '#description' => t('Type of element you want to place on the page'),
+  );
+
+  if(!empty($data['type'])) {
+    $current_type = $data['type'];
+    // Add fields for specified type.
+    if (!empty($types[$current_type])) {
+      foreach ($types[$current_type]['config'] as $config_key => $config) {
+        $form['elements'][$key][$config_key] = array(
+          '#type' => $config['type'],
+          '#title' => $config['name'],
+          '#default_value' => isset($data[$config_key]) ? $data[$config_key] : '',
+        );
+        if(isset($config['options'])) $form['elements'][$key][$config_key]['#options'] = $config['options'];
+      }
+    }
+
+    // Text field to inject into.
+    $field_options = array();
+    foreach (field_info_fields() as $field_name => $field_info) {
+      if (in_array($field_info['type'], array('text_with_summary', 'text_long', 'text'))) {
+        $field_options[$field_name] = $field_name;
+      }
+    }
+    $form['elements'][$key]['field'] = array(
+      '#type' => 'select',
+      '#title' => 'Field to inject to',
+      '#options' => $field_options,
+      '#default_value' => isset($data['field']) ? $data['field'] : '',
+      '#description' => t('Choose a field where you want to add the selected element'),
+    );
+    $entity_info = entity_get_info('node');
+    $view_modes = array_keys($entity_info['view modes']);
+    $form['elements'][$key]['view_mode'] = array(
+      '#type' => 'select',
+      '#title' => 'View Mode to inject to',
+      '#options' => array_combine($view_modes, $view_modes),
+      '#default_value' => isset($data['view_mode']) ? $data['view_mode'] : '',
+      '#description' => t('view mode of above selected field'),
+    );
+
+    // HTML tag name to inject next to.
+    $form['elements'][$key]['tag_name'] = array(
+      '#type' => 'select',
+      '#title' => 'HTML tag name',
+      '#options' => array('p' => 'p', 'h1' => 'h1', 'h2' => 'h2', 'h3' => 'h3'),
+      '#default_value' => isset($data['tag_name']) ? $data['tag_name'] : '',
+      '#description' => t('HTML tag name used as a condition to inject next to it.'),
+    );
+    // Inject element before or after.
+    $form['elements'][$key]['before_after'] = array(
+      '#type' => 'select',
+      '#title' => 'Position',
+      '#options' => array('before' => 'Before', 'after' => 'After'),
+      '#default_value' => isset($data['before_after']) ? $data['before_after'] : '',
+      '#description' => t('set the position of your block/placeholder in conjunction with HTML tag name chosen in field above'),
+    );
+
+    // Position to inject.
+    $form['elements'][$key]['pos'] = array(
+      '#type' => 'select',
+      '#title' => 'Number Item Ref',
+      '#options' => array_combine(range(0,30), range(0,30)),
+      '#default_value' => isset($data['pos']) ? $data['pos'] : '',
+      '#description' => t('Number of "HTML TAG NAME" to be skipped before injecting block/placebholder'),
+    );
+
+    // Guide to position from (top/bottom).
+    $form['elements'][$key]['guide'] = array(
+      '#type' => 'select',
+      '#title' => 'Guide',
+      '#options' => array(
+        'top' => 'Top',
+        'bottom' => 'Bottom',
+      ),
+      '#default_value' => isset($data['guide']) ? $data['guide'] : '',
+      '#description' => t('Select position to count "Number Item ref"'),
+    );
+
+    // Min Siblings before the end.
+    $form['elements'][$key]['min_siblings'] = array(
+      '#type' => 'select',
+      '#title' => 'Minimum siblings',
+      '#options' => array_combine(range(0,10), range(0,10)),
+      '#default_value' => isset($data['min_siblings']) ? $data['min_siblings'] : 0,
+      '#description' => t('Only inject elements if there is at least N siblings before the last HTML tag name selected'),
+      '#states' => array('visible' => array(
+        ':input[name="reactions[plugins][dynamic_inject_context][elements][' . $key . '][guide]"]' => array('value' => 'top'))
+      ),
+    );
+
+    // Minimum word count.
+    $form['elements'][$key]['min_word_count'] = array(
+      '#type' => 'textfield',
+      '#title' => 'Minimum Word Count',
+      '#default_value' => isset($data['min_word_count']) ? $data['min_word_count'] : 0,'',
+      '#description' => t('Only inject elements if there are at least this many words on the article'),
+    );
+  }
+
+  // Remove inject item button.
+  if ($removable) {
+    $form['elements'][$key]['remove'] = array(
+      '#type' => 'submit',
+      '#value' => t('Remove inject element'),
+      '#name' => 'remove-inject-element-' . $key,
+      '#submit' => array('dynamic_inject_contexts_ajax_rebuild_elements'),
+      '#limit_validation_errors' => array(),
+      '#ajax' => array(
+        'callback' => 'dynamic_inject_contexts_ajax_reload_elements',
+        'wrapper' => 'dynamic-inject-element-wrapper',
+        'effect' => 'fade',
+      ),
+    );
+  }
+}
+
+function dynamic_inject_contexts_ajax_rebuild_elements($form, &$form_state) {
+  $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * Ajax callback to return element form items.
+ */
+function dynamic_inject_contexts_ajax_reload_elements($form, $form_state) {
+  $form_state['rebuild'] = TRUE;
+  return $form['reactions']['plugins']['dynamic_inject_context']['elements'];
+}
+
+/**
+ * Implements hook_context_registry().
+ */
+function dynamic_inject_context_registry() {
+  return array(
+    'reactions' => array(
+      'dynamic_inject_context' => array(
+        'title' => t('Dynamic Inject'),
+        'plugin' => 'dynamic_inject_context_reaction',
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_context_plugins().
+ */
+function dynamic_inject_context_plugins() {
+  $plugins = array();
+  $plugins['dynamic_inject_context_reaction'] = array(
+    'handler' => array(
+      'path' => drupal_get_path('module', 'dynamic_inject') . '/plugins/contexts',
+      'file' => 'dynamic_inject_context_reaction.inc',
+      'class' => 'dynamic_inject_context_reaction',
+      'parent' => 'context_reaction',
+    ),
+  );
+  return $plugins;
+}
+
+/**
+ * hook_preprocess_node().
+ *
+ * @param $variables
+ */
+function dynamic_inject_preprocess_node(&$variables) {
+  if ($plugin = context_get_plugin('reaction', 'dynamic_inject_context')) {
+    $plugin->execute($variables);
+  }
+}

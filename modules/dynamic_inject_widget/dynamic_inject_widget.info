@@ -1,0 +1,5 @@
+name = Dynamic Inject Widget
+description = Inject Widget
+package = Content
+core = 7.x
+dependencies[] = dynamic_inject

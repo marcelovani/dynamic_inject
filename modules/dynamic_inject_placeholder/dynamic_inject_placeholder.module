@@ -1,0 +1,49 @@
+<?php
+/**
+ * Code for inject placeholder submodule.
+ */
+/**
+ * hook_dynamic_inject_type_info().
+ *
+ * @return array
+ */
+function dynamic_inject_placeholder_dynamic_inject_type_info() {
+  return array(
+    'placeholder' => array(
+      'name' => t('Placeholder'),
+      'config' => array(
+        'html_element' => array(
+          'type' => 'select',
+          'name' => t('HTML Element'),
+          // At the moment div, but we can extend it in the future.
+          'options' => array('div' => 'div'),
+          'visibility' => 'visible',
+          '#description' => t('Select the wrapper element to be placed as placeholder'),
+        ),
+        'class_name' => array(
+          'type' => 'textfield',
+          'name' => t('Class Name'),
+          '#description' => t('Type class name without (.), used in above selected "HTML ELEMENT"'),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * hook_render_element().
+ *
+ * @param $item
+ * @return string
+ */
+function dynamic_inject_placeholder_dynamic_inject_render_placeholder($item) {
+  $render_array = array(
+    '#type' => 'html_tag',
+    '#tag' => $item['html_element'],
+    '#value' => '',
+    '#attributes' => array('class' => $item['class_name']),
+  );
+  $output = render($render_array);
+
+  return $output;
+}

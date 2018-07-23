@@ -1,0 +1,5 @@
+name = Dynamic Inject Blocks
+description = Inject blocks anywhere
+package = Content
+core = 7.x
+dependencies[] = dynamic_inject

@@ -1,0 +1,78 @@
+<?php
+/**
+ * Code for inject wysiwyg submodule.
+ */
+
+/**
+ * hook_dynamic_inject_type_info().
+ *
+ * @return array
+ */
+function dynamic_inject_widget_dynamic_inject_type_info() {
+  return array(
+    'widget' => array(
+      'name' => t('Widget'),
+      'config' => array(
+        'widget_code' => array(
+          'type' => 'textarea',
+          'name' => t('Widget Code'),
+          '#description' => t('Insert the code for the widget.'),
+        ),
+        'widget_exclude' => array(
+          'type' => 'textarea',
+          'name' => t('Widget Exclude'),
+          '#description' => t("Check if an id, class or an iframe src domain is on the page. Separate by comma."),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_dynamic_inject_render_TYPE().
+ *
+ * @param $item
+ *
+ * @return string
+ */
+function dynamic_inject_widget_dynamic_inject_render_widget($item) {
+  $render_array = array(
+    '#markup' => $item['widget_code'],
+  );
+  $output = render($render_array);
+
+  return $output;
+}
+
+/**
+ * Implements hook_dynamic_inject_exclude().
+ *
+ * @param $xPath_dom
+ * @param $item
+ *
+ * @return bool
+ */
+function dynamic_inject_widget_dynamic_inject_exclude($xPath_dom, $item) {
+  if (empty($item['widget_exclude'])) {
+    return FALSE;
+  }
+
+  $exclude = $item['widget_exclude'];
+  $excluded_items = explode(',', $exclude);
+  foreach ($excluded_items as $excluded_item) {
+    // Check if the excluded item is a class.
+    if ($xPath_dom->query('//div[@class="' . $excluded_item . '"]')->length > 0) {
+      return TRUE;
+    }
+    // Check if the excluded item is an iframe.
+    if ($xPath_dom->query('//iframe[contains(@src,"' . $excluded_item . '")]')->length > 0) {
+      return TRUE;
+    }
+    // Check if the excluded item is an id.
+    if ($xPath_dom->query('//div[contains(@id,"' . $excluded_item . '")]')->length > 0) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}

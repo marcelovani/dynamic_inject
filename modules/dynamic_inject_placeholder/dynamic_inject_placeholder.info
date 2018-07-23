@@ -1,0 +1,5 @@
+name = Dynamic Inject Placeholder
+description = Inject Placeholders
+package = Content
+core = 7.x
+dependencies[] = dynamic_inject
